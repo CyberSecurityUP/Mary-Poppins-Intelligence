@@ -1,0 +1,455 @@
+# Mary Poppins — Development Docker Compose
+# Full local development stack with all services
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────
+  # API Gateway
+  # ─────────────────────────────────────────────────────────────────
+  api-gateway:
+    image: kong:3.6
+    container_name: mp-gateway
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_LOG_LEVEL: info
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+      - "8001:8001"
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+    depends_on:
+      - core-api
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Core API (FastAPI)
+  # ─────────────────────────────────────────────────────────────────
+  core-api:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: mp-core-api
+    environment:
+      MP_ENVIRONMENT: development
+      MP_DEBUG: "true"
+      MP_SECRET_KEY: "dev-secret-key-change-in-production"
+      MP_PG_HOST: postgres
+      MP_PG_PASSWORD: "dev_password"
+      MP_NEO4J_URI: "bolt://neo4j:7687"
+      MP_NEO4J_PASSWORD: "dev_password"
+      MP_ES_HOSTS: '["http://elasticsearch:9200"]'
+      MP_ES_PASSWORD: "dev_password"
+      MP_REDIS_HOST: redis
+      MP_KAFKA_BOOTSTRAP_SERVERS: '["kafka:9092"]'
+      MP_KAFKA_SASL_PASSWORD: "dev_password"
+      MP_VAULT_ENABLED: "false"
+      # LLM & AI Analysis
+      MP_LLM_DEFAULT_PROVIDER: "anthropic"
+      MP_LLM_ANTHROPIC_API_KEY: "${MP_LLM_ANTHROPIC_API_KEY:-}"
+      MP_LLM_OPENAI_API_KEY: "${MP_LLM_OPENAI_API_KEY:-}"
+      MP_LLM_DEEPSEEK_API_KEY: "${MP_LLM_DEEPSEEK_API_KEY:-}"
+      MP_LLM_OPENROUTER_API_KEY: "${MP_LLM_OPENROUTER_API_KEY:-}"
+      MP_AIORNOT_API_KEY: "${MP_AIORNOT_API_KEY:-}"
+    ports:
+      - "8080:8000"
+    volumes:
+      - ../../backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - mp-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────
+  # Ingestion Worker
+  # ─────────────────────────────────────────────────────────────────
+  ingestion-worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.worker
+    container_name: mp-ingestion-worker
+    command: celery -A workers.ingestion worker -Q ingestion -c 4
+    environment:
+      MP_REDIS_HOST: redis
+      MP_KAFKA_BOOTSTRAP_SERVERS: '["kafka:9092"]'
+      MP_PG_HOST: postgres
+      MP_PG_PASSWORD: "dev_password"
+    volumes:
+      - ../../backend:/app
+    depends_on:
+      - redis
+      - kafka
+      - postgres
+    networks:
+      - mp-network
+    # SECURITY: Read-only filesystem, no raw content to disk
+    read_only: true
+    tmpfs:
+      - /tmp:size=2G,mode=1777
+
+  # ─────────────────────────────────────────────────────────────────
+  # AI Classifier Worker (GPU-enabled in production)
+  # ─────────────────────────────────────────────────────────────────
+  classifier-worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.classifier
+    container_name: mp-classifier
+    command: celery -A workers.classifier worker -Q classify -c 2
+    environment:
+      MP_CLASSIFIER_DEVICE: cpu  # Use 'cuda' with GPU runtime
+      MP_CLASSIFIER_NSFW_MODEL_PATH: /models/nsfw_detector_v3.onnx
+      MP_CLASSIFIER_YAHOO_NSFW_MODEL_PATH: /models/yahoo_open_nsfw.onnx
+      MP_CLASSIFIER_YAHOO_NSFW_ENABLED: "true"
+      MP_CLASSIFIER_YAHOO_NSFW_WEIGHT: "0.30"
+      MP_CLASSIFIER_NUDENET_MODEL_PATH: /models/nudenet_v3.onnx
+      MP_CLASSIFIER_NUDENET_ENABLED: "true"
+      MP_CLASSIFIER_NUDENET_WEIGHT: "0.25"
+      MP_CLASSIFIER_NSFL_MODEL_PATH: /models/nsfl_detector_v1.onnx
+      MP_CLASSIFIER_NSFL_ENABLED: "true"
+      MP_CLASSIFIER_NSFL_ALERT_THRESHOLD: "0.80"
+      MP_CLASSIFIER_ENSEMBLE_METHOD: "weighted_average"
+      MP_REDIS_HOST: redis
+      MP_KAFKA_BOOTSTRAP_SERVERS: '["kafka:9092"]'
+      MP_PG_HOST: postgres
+      MP_PG_PASSWORD: "dev_password"
+    volumes:
+      - model-store:/models:ro
+      - ../../backend:/app
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - mp-network
+    read_only: true
+    tmpfs:
+      - /tmp:size=4G,mode=1777
+    # Uncomment for GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ─────────────────────────────────────────────────────────────────
+  # OSINT Worker
+  # ─────────────────────────────────────────────────────────────────
+  osint-worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.worker
+    container_name: mp-osint-worker
+    command: celery -A workers.osint worker -Q osint -c 8
+    environment:
+      MP_REDIS_HOST: redis
+      MP_PG_HOST: postgres
+      MP_PG_PASSWORD: "dev_password"
+    volumes:
+      - ../../backend:/app
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Crypto Tracer Worker
+  # ─────────────────────────────────────────────────────────────────
+  crypto-worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.worker
+    container_name: mp-crypto-worker
+    command: celery -A workers.crypto worker -Q crypto -c 4
+    environment:
+      MP_REDIS_HOST: redis
+      MP_PG_HOST: postgres
+      MP_PG_PASSWORD: "dev_password"
+      MP_CRYPTO_BITCOIN_RPC_URL: "http://bitcoin-node:8332"
+      MP_CRYPTO_ETHEREUM_RPC_URL: "http://ethereum-node:8545"
+    volumes:
+      - ../../backend:/app
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Dark Web Crawler (network-isolated)
+  # ─────────────────────────────────────────────────────────────────
+  darkweb-crawler:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.darkweb
+    container_name: mp-darkweb-crawler
+    command: celery -A workers.darkweb worker -Q darkweb -c 3
+    environment:
+      MP_DARKWEB_TOR_SOCKS_PROXY: "socks5h://tor-proxy:9050"
+      MP_REDIS_HOST: redis
+      MP_PG_HOST: postgres
+      MP_PG_PASSWORD: "dev_password"
+    depends_on:
+      - tor-proxy
+      - redis
+      - postgres
+    networks:
+      - mp-darkweb  # Isolated network
+      - mp-network
+
+  tor-proxy:
+    image: dperson/torproxy:latest
+    container_name: mp-tor-proxy
+    ports:
+      - "9050:9050"
+    networks:
+      - mp-darkweb
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────
+  # Frontend (React)
+  # ─────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: mp-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../frontend/src:/app/src
+    environment:
+      VITE_API_URL: "http://localhost:8000"
+      VITE_WS_URL: "ws://localhost:8000"
+    depends_on:
+      - api-gateway
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Authentication (Keycloak)
+  # ─────────────────────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: mp-keycloak
+    command: start-dev --import-realm --hostname-strict=false --http-enabled=true
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_dev
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://postgres:5432/keycloak"
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: dev_password
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # PostgreSQL
+  # ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mp-postgres
+    environment:
+      POSTGRES_USER: mp_admin
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: marypoppins
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../database/postgres/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mp_admin -d marypoppins"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Neo4j (Graph Database)
+  # ─────────────────────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5.18-community
+    container_name: mp-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/dev_password
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      NEO4J_server_memory_heap_max__size: 2G
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - ../../database/neo4j:/var/lib/neo4j/import:ro
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Elasticsearch
+  # ─────────────────────────────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: mp-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Redis
+  # ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: mp-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Kafka + Zookeeper
+  # ─────────────────────────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: mp-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - mp-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: mp-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    depends_on:
+      - zookeeper
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # MinIO (Object Storage)
+  # ─────────────────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: mp-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: mp_minio
+      MINIO_ROOT_PASSWORD: dev_password
+    volumes:
+      - minio-data:/data
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # ClickHouse (Analytics)
+  # ─────────────────────────────────────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: mp-clickhouse
+    ports:
+      - "8123:8123"
+      - "9004:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    networks:
+      - mp-network
+
+  # ─────────────────────────────────────────────────────────────────
+  # Monitoring
+  # ─────────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: mp-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - mp-network
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: mp-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin_dev
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks:
+      - mp-network
+
+
+# ─────────────────────────────────────────────────────────────────
+# Networks
+# ─────────────────────────────────────────────────────────────────
+networks:
+  mp-network:
+    driver: bridge
+    name: mp-network
+  mp-darkweb:
+    driver: bridge
+    name: mp-darkweb
+    internal: true  # No external internet access — Tor only
+
+# ─────────────────────────────────────────────────────────────────
+# Volumes
+# ─────────────────────────────────────────────────────────────────
+volumes:
+  postgres-data:
+  neo4j-data:
+  es-data:
+  redis-data:
+  minio-data:
+  clickhouse-data:
+  grafana-data:
+  model-store:

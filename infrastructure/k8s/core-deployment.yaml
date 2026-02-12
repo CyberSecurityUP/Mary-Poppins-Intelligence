@@ -1,0 +1,394 @@
+# Mary Poppins — Kubernetes Core Service Deployments
+# Namespace: mp-core
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mp-core
+  labels:
+    app.kubernetes.io/part-of: mary-poppins
+    istio-injection: enabled
+
+---
+# ═══════════════════════════════════════════════════════════════
+# Core API Deployment
+# ═══════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-api
+  namespace: mp-core
+  labels:
+    app: core-api
+    component: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: core-api
+  template:
+    metadata:
+      labels:
+        app: core-api
+        component: backend
+    spec:
+      serviceAccountName: mp-core-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: core-api
+          image: marypoppins/core-api:latest
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          env:
+            - name: MP_ENVIRONMENT
+              value: "production"
+            - name: MP_PG_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: mp-db-credentials
+                  key: pg-host
+            - name: MP_PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mp-db-credentials
+                  key: pg-password
+            - name: MP_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mp-app-secrets
+                  key: secret-key
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-api
+  namespace: mp-core
+spec:
+  selector:
+    app: core-api
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP
+
+---
+# ═══════════════════════════════════════════════════════════════
+# AI Classifier Deployment (GPU-enabled)
+# ═══════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: classifier
+  namespace: mp-core
+  labels:
+    app: classifier
+    component: ml
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: classifier
+  template:
+    metadata:
+      labels:
+        app: classifier
+        component: ml
+    spec:
+      serviceAccountName: mp-classifier
+      nodeSelector:
+        gpu: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: classifier
+          image: marypoppins/classifier:latest
+          env:
+            - name: MP_CLASSIFIER_DEVICE
+              value: "cuda"
+          resources:
+            requests:
+              cpu: 2000m
+              memory: 4Gi
+              nvidia.com/gpu: 1
+            limits:
+              cpu: 4000m
+              memory: 8Gi
+              nvidia.com/gpu: 1
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: model-store
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+
+---
+# ═══════════════════════════════════════════════════════════════
+# Ingestion Worker (HPA auto-scaled)
+# ═══════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-worker
+  namespace: mp-core
+  labels:
+    app: ingestion-worker
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ingestion-worker
+  template:
+    metadata:
+      labels:
+        app: ingestion-worker
+        component: worker
+    spec:
+      serviceAccountName: mp-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: worker
+          image: marypoppins/ingestion-worker:latest
+          command: ["celery", "-A", "workers.ingestion", "worker", "-Q", "ingestion", "-c", "4"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ingestion-worker-hpa
+  namespace: mp-core
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ingestion-worker
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# ═══════════════════════════════════════════════════════════════
+# OSINT Worker
+# ═══════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: osint-worker
+  namespace: mp-core
+  labels:
+    app: osint-worker
+    component: worker
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: osint-worker
+  template:
+    metadata:
+      labels:
+        app: osint-worker
+        component: worker
+    spec:
+      serviceAccountName: mp-worker
+      containers:
+        - name: worker
+          image: marypoppins/osint-worker:latest
+          command: ["celery", "-A", "workers.osint", "worker", "-Q", "osint", "-c", "8"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+
+---
+# ═══════════════════════════════════════════════════════════════
+# Crypto Worker
+# ═══════════════════════════════════════════════════════════════
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-worker
+  namespace: mp-core
+  labels:
+    app: crypto-worker
+    component: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: crypto-worker
+  template:
+    metadata:
+      labels:
+        app: crypto-worker
+        component: worker
+    spec:
+      serviceAccountName: mp-worker
+      containers:
+        - name: worker
+          image: marypoppins/crypto-worker:latest
+          command: ["celery", "-A", "workers.crypto", "worker", "-Q", "crypto", "-c", "4"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+
+---
+# ═══════════════════════════════════════════════════════════════
+# Network Policies
+# ═══════════════════════════════════════════════════════════════
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-default
+  namespace: mp-core
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-core-api-ingress
+  namespace: mp-core
+spec:
+  podSelector:
+    matchLabels:
+      app: core-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: mp-ingress
+      ports:
+        - port: 8000
+          protocol: TCP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-workers-to-data
+  namespace: mp-core
+spec:
+  podSelector:
+    matchLabels:
+      component: worker
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: mp-data
+      ports:
+        - port: 5432   # PostgreSQL
+          protocol: TCP
+        - port: 7687   # Neo4j
+          protocol: TCP
+        - port: 9200   # Elasticsearch
+          protocol: TCP
+        - port: 6379   # Redis
+          protocol: TCP
+        - port: 9092   # Kafka
+          protocol: TCP

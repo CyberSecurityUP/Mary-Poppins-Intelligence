@@ -1,0 +1,128 @@
+{
+  "realm": "marypoppins",
+  "enabled": true,
+  "displayName": "Mary Poppins",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "failureFactor": 5,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      {
+        "name": "mp_admin",
+        "description": "Full platform administrator"
+      },
+      {
+        "name": "mp_analyst",
+        "description": "Intelligence analyst — read/write cases and investigations"
+      },
+      {
+        "name": "mp_investigator",
+        "description": "Senior investigator — OSINT, crypto tracing, dark web access"
+      },
+      {
+        "name": "mp_reviewer",
+        "description": "Content reviewer — hash review queue access"
+      },
+      {
+        "name": "mp_auditor",
+        "description": "Read-only audit log and compliance access"
+      },
+      {
+        "name": "mp_viewer",
+        "description": "Read-only dashboard and report access"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "mp-frontend",
+      "name": "Mary Poppins Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:8000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:8000"
+      ],
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email"
+      ]
+    },
+    {
+      "clientId": "mp-api",
+      "name": "Mary Poppins API",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "dev-api-secret-change-in-production",
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "profile",
+        "roles",
+        "email"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@marypoppins.local",
+      "enabled": true,
+      "firstName": "Platform",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin_dev",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["mp_admin"]
+    },
+    {
+      "username": "analyst",
+      "email": "analyst@marypoppins.local",
+      "enabled": true,
+      "firstName": "Demo",
+      "lastName": "Analyst",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "analyst_dev",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["mp_analyst"]
+    }
+  ],
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": false
+    }
+  ]
+}

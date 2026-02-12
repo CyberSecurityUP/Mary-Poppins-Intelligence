@@ -1,0 +1,77 @@
+_format_version: "3.0"
+
+services:
+  - name: core-api
+    url: http://core-api:8000
+    routes:
+      - name: api-routes
+        paths:
+          - /api
+        strip_path: true
+        protocols:
+          - http
+          - https
+
+  - name: frontend
+    url: http://frontend:3000
+    routes:
+      - name: frontend-routes
+        paths:
+          - /
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+  - name: keycloak
+    url: http://keycloak:8080
+    routes:
+      - name: auth-routes
+        paths:
+          - /auth
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+  - name: websocket
+    url: http://core-api:8000
+    routes:
+      - name: ws-routes
+        paths:
+          - /ws
+        strip_path: false
+        protocols:
+          - http
+          - https
+
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:3000"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Authorization
+        - Content-Type
+        - X-Request-ID
+      exposed_headers:
+        - X-Request-ID
+      credentials: true
+      max_age: 3600
+
+  - name: rate-limiting
+    config:
+      minute: 120
+      policy: local
+
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 10
+      size_unit: megabytes
