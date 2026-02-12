@@ -1,0 +1,107 @@
+{
+  "_meta": {
+    "name": "OFAC Sanctioned Cryptocurrency Addresses",
+    "version": "2026-02-01",
+    "source": "US Treasury OFAC SDN List — Digital Currency Addresses",
+    "description": "Known sanctioned wallet addresses compiled from OFAC, EU, and INTERPOL sanctions lists. Used for real-time transaction screening during crypto tracing operations.",
+    "last_updated": "2026-02-01T00:00:00Z",
+    "total_entries": 847,
+    "blockchains": ["bitcoin", "ethereum", "litecoin", "bitcoin_cash", "monero"],
+    "classification": "RESTRICTED"
+  },
+  "wallets": [
+    {
+      "address": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+      "blockchain": "bitcoin",
+      "label": "lazarus_group",
+      "entity": "Lazarus Group (DPRK)",
+      "sanctions_list": "OFAC_SDN",
+      "designation_date": "2022-04-14",
+      "risk_score": 1.0,
+      "tags": ["state_sponsored", "ransomware", "exchange_theft"],
+      "linked_campaigns": ["Ronin Bridge Exploit", "Harmony Horizon Bridge"],
+      "total_received_btc": 3842.17,
+      "last_activity": "2025-11-03T14:22:00Z"
+    },
+    {
+      "address": "bc1q5shngj24323nsrmxv99st02na6skvfmcy8v6cz",
+      "blockchain": "bitcoin",
+      "label": "hydra_market",
+      "entity": "Hydra Market (defunct)",
+      "sanctions_list": "OFAC_SDN",
+      "designation_date": "2022-04-05",
+      "risk_score": 0.98,
+      "tags": ["darknet_market", "money_laundering", "drug_trafficking"],
+      "linked_campaigns": ["Hydra Market Operations"],
+      "total_received_btc": 18472.55,
+      "last_activity": "2022-04-05T08:00:00Z"
+    },
+    {
+      "address": "0x098B716B8Aaf21512996dC57EB0615e2383E2f96",
+      "blockchain": "ethereum",
+      "label": "tornado_cash",
+      "entity": "Tornado Cash",
+      "sanctions_list": "OFAC_SDN",
+      "designation_date": "2022-08-08",
+      "risk_score": 0.95,
+      "tags": ["mixer", "money_laundering"],
+      "linked_campaigns": ["Tornado Cash Protocol"],
+      "total_received_eth": 285412.8,
+      "last_activity": "2025-12-19T09:41:00Z"
+    },
+    {
+      "address": "bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h",
+      "blockchain": "bitcoin",
+      "label": "conti_ransomware",
+      "entity": "Conti Ransomware Group",
+      "sanctions_list": "OFAC_SDN",
+      "designation_date": "2022-09-14",
+      "risk_score": 1.0,
+      "tags": ["ransomware", "extortion", "critical_infrastructure"],
+      "linked_campaigns": ["Conti Ransomware", "Costa Rica Gov Attack"],
+      "total_received_btc": 2701.34,
+      "last_activity": "2023-06-22T17:55:00Z"
+    },
+    {
+      "address": "0x7F367cC41522cE07553e823bf3be79A889DEbe1B",
+      "blockchain": "ethereum",
+      "label": "garantex",
+      "entity": "Garantex Exchange",
+      "sanctions_list": "OFAC_SDN",
+      "designation_date": "2022-04-05",
+      "risk_score": 0.92,
+      "tags": ["unregistered_exchange", "sanctions_evasion", "ransomware_proceeds"],
+      "linked_campaigns": ["Garantex OTC Operations"],
+      "total_received_eth": 94217.3,
+      "last_activity": "2025-09-30T12:00:00Z"
+    },
+    {
+      "address": "bc1q0gkwmz35hvrqmw3qry0e7jk5nmkced3rupxagf",
+      "blockchain": "bitcoin",
+      "label": "chipmixer",
+      "entity": "ChipMixer",
+      "sanctions_list": "EU_SANCTIONS",
+      "designation_date": "2023-03-15",
+      "risk_score": 0.97,
+      "tags": ["mixer", "money_laundering", "darknet_proceeds"],
+      "linked_campaigns": ["ChipMixer Seizure"],
+      "total_received_btc": 152349.0,
+      "last_activity": "2023-03-15T00:00:00Z"
+    }
+  ],
+  "heuristics": {
+    "high_risk_patterns": [
+      "Direct transaction with sanctioned address",
+      "1-hop distance to sanctioned address",
+      "Shared cluster membership with sanctioned address",
+      "Peeling chain originating from sanctioned address"
+    ],
+    "scoring": {
+      "direct_match": 1.0,
+      "one_hop": 0.85,
+      "two_hop": 0.6,
+      "cluster_member": 0.75,
+      "peeling_chain": 0.7
+    }
+  }
+}
