@@ -1,0 +1,189 @@
+# Mary Poppins — AI/ML Model Registry
+# All models used for content classification, grooming detection, and risk scoring
+# Models are loaded at service startup and cached in model-store volume
+
+registry:
+  version: "2.1.0"
+  last_updated: "2026-02-01"
+  storage_backend: "minio"
+  bucket: "mp-model-store"
+
+models:
+  # ── Content Classification ────────────────────────────────────────
+
+  - id: "nsfw-detector-v3"
+    name: "NSFW Content Detector"
+    version: "3.2.1"
+    framework: "onnx"
+    task: "image_classification"
+    architecture: "EfficientNet-B4"
+    input_shape: [1, 3, 380, 380]
+    output_classes: ["safe", "suggestive", "nsfw"]
+    file: "nsfw_efficientnet_b4_v3.2.1.onnx"
+    size_mb: 74.3
+    metrics:
+      accuracy: 0.967
+      precision: 0.954
+      recall: 0.971
+      f1: 0.962
+      auc_roc: 0.993
+    training:
+      dataset: "internal_curated_v5"
+      samples: 2840000
+      epochs: 45
+      optimizer: "AdamW"
+      learning_rate: 0.0001
+    thresholds:
+      safe: 0.0
+      suggestive: 0.4
+      nsfw: 0.75
+    enabled: true
+    weight_in_ensemble: 0.30
+
+  - id: "csam-risk-scorer-v2"
+    name: "CSAM Risk Scorer"
+    version: "2.0.4"
+    framework: "onnx"
+    task: "risk_scoring"
+    architecture: "ResNet-152 + Custom Head"
+    input_shape: [1, 3, 448, 448]
+    output_classes: ["low_risk", "medium_risk", "high_risk", "critical"]
+    file: "csam_risk_resnet152_v2.0.4.onnx"
+    size_mb: 232.8
+    metrics:
+      accuracy: 0.989
+      precision: 0.993
+      recall: 0.984
+      f1: 0.988
+      false_positive_rate: 0.007
+    training:
+      dataset: "ncmec_partnership_v3"
+      samples: 1250000
+      epochs: 80
+      optimizer: "SGD"
+      learning_rate: 0.001
+    thresholds:
+      low_risk: 0.0
+      medium_risk: 0.3
+      high_risk: 0.7
+      critical: 0.85
+    enabled: true
+    weight_in_ensemble: 0.35
+    notes: "Requires Ethics Board approval for threshold changes"
+
+  - id: "age-estimator-v4"
+    name: "Age Estimation Model"
+    version: "4.1.0"
+    framework: "onnx"
+    task: "age_regression"
+    architecture: "SE-ResNeXt-50 + Ordinal Regression"
+    input_shape: [1, 3, 224, 224]
+    output: "continuous_age_estimate"
+    file: "age_seresnext50_v4.1.0.onnx"
+    size_mb: 108.5
+    metrics:
+      mae: 2.14
+      accuracy_within_5y: 0.917
+      accuracy_within_3y: 0.843
+    training:
+      dataset: "imdb_wiki_fairface_merged"
+      samples: 890000
+      epochs: 60
+    safety_margin_years: 3
+    enabled: true
+    weight_in_ensemble: 0.20
+
+  - id: "nudenet-v2"
+    name: "NudeNet Detector"
+    version: "2.1.0"
+    framework: "onnx"
+    task: "body_part_detection"
+    architecture: "YOLOv5-M"
+    input_shape: [1, 3, 640, 640]
+    output_classes:
+      - "exposed_breast_female"
+      - "exposed_genitalia_female"
+      - "exposed_genitalia_male"
+      - "exposed_buttocks"
+      - "covered_breast_female"
+      - "covered_genitalia"
+      - "face"
+    file: "nudenet_yolov5m_v2.1.0.onnx"
+    size_mb: 42.1
+    metrics:
+      map50: 0.891
+      map50_95: 0.724
+    enabled: true
+    weight_in_ensemble: 0.15
+
+  # ── NLP / Grooming Detection ──────────────────────────────────────
+
+  - id: "grooming-detector-v3"
+    name: "Online Grooming Stage Detector"
+    version: "3.0.2"
+    framework: "onnx"
+    task: "text_classification"
+    architecture: "DeBERTa-v3-base + BiLSTM"
+    max_sequence_length: 512
+    output_classes:
+      - "benign"
+      - "friendship_forming"
+      - "relationship_forming"
+      - "risk_assessment"
+      - "exclusivity"
+      - "desensitization"
+      - "sexual_content"
+      - "post_abuse_maintenance"
+    file: "grooming_deberta_v3.0.2.onnx"
+    size_mb: 356.2
+    metrics:
+      accuracy: 0.934
+      macro_f1: 0.912
+      weighted_f1: 0.938
+    training:
+      dataset: "pan_2012_extended_v4"
+      samples: 245000
+      epochs: 12
+      optimizer: "AdamW"
+      learning_rate: 0.00002
+    thresholds:
+      alert_confidence: 0.70
+      stage_confidence: 0.60
+    enabled: true
+
+  # ── AI-Generated Content Detection ────────────────────────────────
+
+  - id: "ai-generated-detector-v1"
+    name: "AI-Generated Image Detector"
+    version: "1.3.0"
+    framework: "onnx"
+    task: "binary_classification"
+    architecture: "ConvNeXt-Tiny + Frequency Analysis"
+    input_shape: [1, 3, 384, 384]
+    output_classes: ["authentic", "ai_generated"]
+    file: "aigen_convnext_v1.3.0.onnx"
+    size_mb: 112.7
+    metrics:
+      accuracy: 0.941
+      precision: 0.928
+      recall: 0.956
+    training:
+      dataset: "synthdetect_v2"
+      samples: 480000
+    enabled: true
+    notes: "Supplements AIOrNot API; used as fallback when API unavailable"
+
+ensemble:
+  method: "weighted_average"
+  low_agreement_threshold: 0.6
+  require_minimum_models: 2
+  escalation_on_disagreement: true
+  human_review_trigger: "any model flags critical AND age_estimate < 18"
+
+deployment:
+  runtime: "onnxruntime"
+  execution_providers: ["CUDAExecutionProvider", "CPUExecutionProvider"]
+  gpu_memory_limit_mb: 4096
+  batch_size: 16
+  warmup_on_startup: true
+  health_check_interval_seconds: 60
