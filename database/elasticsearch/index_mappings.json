@@ -1,0 +1,238 @@
+{
+  "_comment": "Mary Poppins — Elasticsearch Index Mappings",
+
+  "mp-entities": {
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "analysis": {
+        "analyzer": {
+          "entity_analyzer": {
+            "type": "custom",
+            "tokenizer": "standard",
+            "filter": ["lowercase", "asciifolding", "edge_ngram_filter"]
+          },
+          "exact_analyzer": {
+            "type": "custom",
+            "tokenizer": "keyword",
+            "filter": ["lowercase"]
+          }
+        },
+        "filter": {
+          "edge_ngram_filter": {
+            "type": "edge_ngram",
+            "min_gram": 2,
+            "max_gram": 20
+          }
+        }
+      }
+    },
+    "mappings": {
+      "properties": {
+        "entity_id": { "type": "keyword" },
+        "entity_type": { "type": "keyword" },
+        "value": {
+          "type": "text",
+          "analyzer": "entity_analyzer",
+          "fields": {
+            "exact": { "type": "keyword" },
+            "search": { "type": "text", "analyzer": "standard" }
+          }
+        },
+        "display_label": { "type": "text", "analyzer": "standard" },
+        "risk_score": { "type": "float" },
+        "confidence": { "type": "float" },
+        "source": { "type": "keyword" },
+        "tags": { "type": "keyword" },
+        "case_ids": { "type": "keyword" },
+        "first_seen": { "type": "date" },
+        "last_seen": { "type": "date" },
+        "metadata": { "type": "object", "enabled": false },
+        "created_at": { "type": "date" }
+      }
+    }
+  },
+
+  "mp-content-hashes": {
+    "settings": {
+      "number_of_shards": 5,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "hash_id": { "type": "keyword" },
+        "sha256": { "type": "keyword" },
+        "md5": { "type": "keyword" },
+        "phash": { "type": "keyword" },
+        "pdq_hash": { "type": "keyword" },
+        "mime_type": { "type": "keyword" },
+        "file_size_bytes": { "type": "long" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" },
+        "classification": { "type": "keyword" },
+        "nsfw_score": { "type": "float" },
+        "csam_score": { "type": "float" },
+        "age_estimation": { "type": "float" },
+        "known_database_match": { "type": "boolean" },
+        "matched_database": { "type": "keyword" },
+        "source": { "type": "keyword" },
+        "ingested_at": { "type": "date" },
+        "analyzed_at": { "type": "date" }
+      }
+    }
+  },
+
+  "mp-osint-results": {
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "result_id": { "type": "keyword" },
+        "module_name": { "type": "keyword" },
+        "query_type": { "type": "keyword" },
+        "query_value": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } }
+        },
+        "finding_type": { "type": "keyword" },
+        "source_tier": { "type": "keyword" },
+        "confidence": { "type": "float" },
+        "source_url": { "type": "keyword" },
+        "result_data": { "type": "object", "enabled": false },
+        "entity_id": { "type": "keyword" },
+        "case_id": { "type": "keyword" },
+        "queried_at": { "type": "date" }
+      }
+    }
+  },
+
+  "mp-grooming-analyses": {
+    "settings": {
+      "number_of_shards": 2,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "analysis_id": { "type": "keyword" },
+        "text_hash": { "type": "keyword" },
+        "source_type": { "type": "keyword" },
+        "risk_level": { "type": "keyword" },
+        "risk_score": { "type": "float" },
+        "stage_detected": { "type": "keyword" },
+        "indicators": {
+          "type": "nested",
+          "properties": {
+            "indicator_type": { "type": "keyword" },
+            "confidence": { "type": "float" },
+            "stage": { "type": "keyword" }
+          }
+        },
+        "flagged_phrases": { "type": "text" },
+        "language": { "type": "keyword" },
+        "model_name": { "type": "keyword" },
+        "entity_id": { "type": "keyword" },
+        "case_id": { "type": "keyword" },
+        "analyzed_at": { "type": "date" }
+      }
+    }
+  },
+
+  "mp-darkweb-sightings": {
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "sighting_id": { "type": "keyword" },
+        "onion_url": { "type": "keyword" },
+        "page_title": { "type": "text", "analyzer": "standard" },
+        "content_hash": { "type": "keyword" },
+        "content_type": { "type": "keyword" },
+        "category": { "type": "keyword" },
+        "risk_score": { "type": "float" },
+        "keywords_found": { "type": "keyword" },
+        "linked_clearnet_domains": { "type": "keyword" },
+        "server_header": { "type": "keyword" },
+        "crawl_session_id": { "type": "keyword" },
+        "first_seen": { "type": "date" },
+        "last_seen": { "type": "date" }
+      }
+    }
+  },
+
+  "mp-crypto-transactions": {
+    "settings": {
+      "number_of_shards": 5,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "tx_id": { "type": "keyword" },
+        "tx_hash": { "type": "keyword" },
+        "blockchain": { "type": "keyword" },
+        "from_address": { "type": "keyword" },
+        "to_address": { "type": "keyword" },
+        "amount": { "type": "double" },
+        "amount_usd": { "type": "double" },
+        "fee": { "type": "double" },
+        "block_number": { "type": "long" },
+        "block_timestamp": { "type": "date" },
+        "is_mixer_tx": { "type": "boolean" },
+        "from_label": { "type": "keyword" },
+        "to_label": { "type": "keyword" },
+        "from_risk_score": { "type": "float" },
+        "to_risk_score": { "type": "float" }
+      }
+    }
+  },
+
+  "mp-audit-logs": {
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 2,
+      "index.blocks.read_only_allow_delete": false
+    },
+    "mappings": {
+      "properties": {
+        "log_id": { "type": "long" },
+        "timestamp": { "type": "date" },
+        "user_id": { "type": "keyword" },
+        "user_email": { "type": "keyword" },
+        "action": { "type": "keyword" },
+        "resource_type": { "type": "keyword" },
+        "resource_id": { "type": "keyword" },
+        "case_id": { "type": "keyword" },
+        "ip_address": { "type": "ip" },
+        "user_agent": { "type": "text" },
+        "details": { "type": "object", "enabled": false },
+        "entry_hash": { "type": "keyword" },
+        "previous_hash": { "type": "keyword" }
+      }
+    }
+  },
+
+  "mp-alerts": {
+    "settings": {
+      "number_of_shards": 2,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "alert_id": { "type": "keyword" },
+        "severity": { "type": "keyword" },
+        "title": { "type": "text", "analyzer": "standard" },
+        "description": { "type": "text", "analyzer": "standard" },
+        "source_service": { "type": "keyword" },
+        "entity_id": { "type": "keyword" },
+        "case_id": { "type": "keyword" },
+        "is_acknowledged": { "type": "boolean" },
+        "acknowledged_by": { "type": "keyword" },
+        "acknowledged_at": { "type": "date" },
+        "created_at": { "type": "date" }
+      }
+    }
+  }
+}
