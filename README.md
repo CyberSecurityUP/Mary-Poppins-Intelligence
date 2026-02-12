@@ -287,6 +287,10 @@ MaryPoppins/
 | Settings | `Settings.tsx` | 10-tab admin: integrations, thresholds, modules, tenants, RBAC |
 | Audit Log | `AuditLog.tsx` | Immutable hash-chained audit trail viewer |
 
+
+<img width="1496" height="791" alt="Captura de Tela 2026-02-11 às 22 11 04" src="https://github.com/user-attachments/assets/3cdeba53-3aff-46ef-8e69-19e29129c4fc" />
+
+
 ### Key Components
 
 - **InvestigationGraph** -- Cytoscape.js-powered Maltego-style entity graph with cola/dagre layouts, contextual menus, and multi-hop expansion
